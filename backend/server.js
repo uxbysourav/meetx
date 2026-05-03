@@ -172,15 +172,37 @@ io.on("connection", (socket) => {
     socket.to(code).emit("participant-joined", publicUser(user));
   });
 
-  socket.on("chat-message", ({ text }) => {
+  socket.on("chat-message", ({ text, to = "everyone" }) => {
     const room = rooms.get(socket.data.roomCode);
     const user = findUser(room, socket.data.userId);
     const cleanText = String(text || "").trim().slice(0, 400);
     if (!room || !user || !cleanText) return;
-    const message = { id: randomUUID(), userId: user.id, name: user.name, text: cleanText, at: Date.now() };
-    room.messages.push(message);
-    room.messages = room.messages.slice(-MAX_MESSAGES);
-    io.to(room.code).emit("chat-message", message);
+    const targetId = String(to || "everyone");
+    const message = {
+      id: randomUUID(),
+      userId: user.id,
+      name: user.name,
+      text: cleanText,
+      to: targetId,
+      private: targetId !== "everyone",
+      at: Date.now()
+    };
+
+    if (targetId === "everyone") {
+      room.messages.push(message);
+      room.messages = room.messages.slice(-MAX_MESSAGES);
+      io.to(room.code).emit("chat-message", message);
+      return;
+    }
+
+    const target = findUser(room, targetId);
+    if (!target) {
+      socket.emit("admin-message", { message: "That participant is no longer in the meeting." });
+      return;
+    }
+
+    socket.emit("chat-message", message);
+    if (target.socketId) io.to(target.socketId).emit("chat-message", message);
   });
 
   socket.on("raise-hand", () => {
@@ -212,6 +234,15 @@ io.on("connection", (socket) => {
     const user = findUser(room, socket.data.userId);
     if (!room || !user) return;
     user.presenting = false;
+    io.to(room.code).emit("participant-updated", publicUser(user));
+  });
+
+  socket.on("screen-started", () => {
+    const room = rooms.get(socket.data.roomCode);
+    const user = findUser(room, socket.data.userId);
+    if (!room || !user) return;
+    user.presenting = true;
+    user.screenRequest = false;
     io.to(room.code).emit("participant-updated", publicUser(user));
   });
 

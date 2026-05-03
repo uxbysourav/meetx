@@ -21,6 +21,7 @@ const els = {
   videoGrid: document.querySelector("#videoGrid"),
   messages: document.querySelector("#messages"),
   chatForm: document.querySelector("#chatForm"),
+  chatRecipient: document.querySelector("#chatRecipient"),
   chatInput: document.querySelector("#chatInput"),
   toggleMic: document.querySelector("#toggleMic"),
   toggleCamera: document.querySelector("#toggleCamera"),
@@ -46,6 +47,7 @@ const state = {
   localStream: null,
   screenStream: null,
   screenShareApproved: false,
+  notificationPermissionAsked: false,
   boardOpen: false,
   isDrawing: false,
   lastPoint: null
@@ -75,6 +77,21 @@ function showToast(message) {
   els.toast.classList.remove("hidden");
   window.clearTimeout(showToast.timer);
   showToast.timer = window.setTimeout(() => els.toast.classList.add("hidden"), 3600);
+}
+
+function requestNotificationPermission() {
+  if (!("Notification" in window) || state.notificationPermissionAsked) return;
+  state.notificationPermissionAsked = true;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+  }
+}
+
+function notifyUser(title, body) {
+  showToast(body ? `${title}: ${body}` : title);
+  if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
+    new Notification(title, { body });
+  }
 }
 
 function setStatus(text, online = false) {
@@ -131,17 +148,37 @@ async function requestMediaAfterJoin() {
     return state.localStream;
   }
 
-  try {
-    const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    mediaStream.getTracks().forEach((track) => state.localStream.addTrack(track));
-    attachLocalTracksToPeers(mediaStream);
-    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
-    return state.localStream;
-  } catch {
-    showToast("Camera or microphone was blocked. You still joined without media.");
-    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
-    return state.localStream;
+  const grantedTracks = [];
+  const denied = [];
+
+  for (const request of [
+    { kind: "audio", constraints: { audio: true, video: false }, label: "Microphone" },
+    { kind: "video", constraints: { audio: false, video: true }, label: "Camera" }
+  ]) {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia(request.constraints);
+      mediaStream.getTracks().forEach((track) => {
+        state.localStream.addTrack(track);
+        grantedTracks.push(track);
+      });
+    } catch {
+      denied.push(request.label);
+    }
   }
+
+  if (grantedTracks.length) {
+    await attachLocalTracksToPeers(new MediaStream(grantedTracks));
+    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+    showToast("Media is ready.");
+  } else {
+    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+    showToast("Camera and microphone were blocked. You still joined without media.");
+  }
+
+  if (denied.length && grantedTracks.length) {
+    showToast(`${denied.join(" and ")} blocked. You can continue with available media.`);
+  }
+  return state.localStream;
 }
 
 function connectSocket() {
@@ -224,6 +261,8 @@ function handleParticipantLeft({ userId }) {
 function handleParticipantUpdated(user) {
   state.participants.set(user.id, user);
   renderParticipants();
+  setTilePresenting(user.id, Boolean(user.presenting));
+  if (user.id === state.user?.id) setTilePresenting("local", Boolean(user.presenting));
   updateHandButton();
 }
 
@@ -239,6 +278,7 @@ async function createPeer(userId, initiator) {
   peer.ontrack = ({ streams }) => {
     const user = state.participants.get(userId);
     addVideoTile(userId, streams[0], user?.name || "Guest");
+    setTilePresenting(userId, Boolean(user?.presenting));
   };
   peer.onconnectionstatechange = () => {
     if (["closed", "failed", "disconnected"].includes(peer.connectionState)) closePeer(userId);
@@ -301,6 +341,10 @@ function addVideoTile(id, stream, label, muted = false) {
   tile.querySelector(".label").textContent = label;
 }
 
+function setTilePresenting(id, presenting) {
+  document.querySelector(`[data-tile="${id}"]`)?.classList.toggle("presenting", presenting);
+}
+
 function renderParticipants() {
   const users = [...state.participants.values()];
   els.participantCount.textContent = users.length;
@@ -312,7 +356,8 @@ function renderParticipants() {
     const badges = [
       user.isAdmin ? "Admin" : "",
       user.handRaised ? "Hand raised" : "",
-      user.screenRequest ? "Wants to present" : ""
+      user.screenRequest ? "Wants to present" : "",
+      user.presenting ? "Presenting" : ""
     ].filter(Boolean).join(" | ");
     return `
       <article class="participant">
@@ -329,7 +374,18 @@ function renderParticipants() {
       </article>
     `;
   }).join("");
+  renderChatRecipients(users);
   updateHandButton();
+}
+
+function renderChatRecipients(users) {
+  const selected = els.chatRecipient.value || "everyone";
+  const options = [`<option value="everyone">Everyone</option>`]
+    .concat(users
+      .filter((user) => user.id !== state.user?.id)
+      .map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`));
+  els.chatRecipient.innerHTML = options.join("");
+  els.chatRecipient.value = users.some((user) => user.id === selected) || selected === "everyone" ? selected : "everyone";
 }
 
 function updateHandButton() {
@@ -343,10 +399,14 @@ function updateHandButton() {
 
 function addMessage(message) {
   const item = document.createElement("article");
-  item.className = "message";
-  item.innerHTML = `<strong>${escapeHtml(message.name)}</strong><p>${escapeHtml(message.text)}</p>`;
+  item.className = `message${message.private ? " private" : ""}`;
+  const targetLabel = message.private ? "Private" : "Everyone";
+  item.innerHTML = `<strong>${escapeHtml(message.name)} <span>${targetLabel}</span></strong><p>${escapeHtml(message.text)}</p>`;
   els.messages.appendChild(item);
   els.messages.scrollTop = els.messages.scrollHeight;
+  if (message.userId !== state.user?.id) {
+    notifyUser(message.private ? `Private message from ${message.name}` : `Message from ${message.name}`, message.text);
+  }
 }
 
 function escapeHtml(value) {
@@ -359,30 +419,52 @@ function escapeHtml(value) {
   })[char]);
 }
 
-function replaceOutgoingVideoTrack(track) {
-  state.peers.forEach((peer) => {
+async function setOutgoingVideoTrack(track) {
+  for (const [userId, peer] of state.peers.entries()) {
     const sender = peer.getSenders().find((item) => item.track?.kind === "video");
-    if (sender) sender.replaceTrack(track);
-  });
+    if (sender) {
+      await sender.replaceTrack(track);
+    } else {
+      peer.addTrack(track, track === state.screenStream?.getVideoTracks()[0] ? state.screenStream : state.localStream);
+      if (peer.signalingState === "stable") {
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        state.socket.emit("signal", { to: userId, signal: { description: peer.localDescription } });
+      }
+    }
+  }
+}
+
+async function clearOutgoingVideoTrack() {
+  for (const peer of state.peers.values()) {
+    const sender = peer.getSenders().find((item) => item.track?.kind === "video");
+    if (sender) await sender.replaceTrack(null);
+  }
 }
 
 async function startScreenShare() {
   try {
     state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     const screenTrack = state.screenStream.getVideoTracks()[0];
-    replaceOutgoingVideoTrack(screenTrack);
+    await setOutgoingVideoTrack(screenTrack);
     addVideoTile("local", state.screenStream, `${state.user.name} presenting`, true);
+    setTilePresenting("local", true);
+    state.socket.emit("screen-started");
+    showToast("Screen sharing started.");
     screenTrack.onended = () => stopScreenShare();
   } catch {
     showToast("Screen sharing could not start.");
   }
 }
 
-function stopScreenShare() {
+async function stopScreenShare() {
   const cameraTrack = state.localStream?.getVideoTracks()[0];
-  if (cameraTrack) replaceOutgoingVideoTrack(cameraTrack);
+  if (cameraTrack) await setOutgoingVideoTrack(cameraTrack);
+  else await clearOutgoingVideoTrack();
   addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+  setTilePresenting("local", false);
   state.socket.emit("screen-stopped");
+  showToast("Screen sharing stopped.");
 }
 
 function resizeBoard() {
@@ -437,6 +519,7 @@ els.createRoomForm.addEventListener("submit", (event) => {
     return;
   }
   enterRoom({ name, create: true }).catch((error) => showToast(error.message));
+  requestNotificationPermission();
 });
 
 els.showCreate.addEventListener("click", () => showLobbyForm("create"));
@@ -496,6 +579,7 @@ els.joinRoomForm.addEventListener("submit", (event) => {
   }
   enterRoom({ name, code, create: false })
     .catch((error) => showToast(error.message));
+  requestNotificationPermission();
 });
 
 els.copyCode.addEventListener("click", async () => {
@@ -507,7 +591,7 @@ els.chatForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = els.chatInput.value.trim();
   if (!text) return;
-  state.socket.emit("chat-message", { text });
+  state.socket.emit("chat-message", { text, to: els.chatRecipient.value || "everyone" });
   els.chatInput.value = "";
 });
 

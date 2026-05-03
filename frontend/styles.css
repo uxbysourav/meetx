@@ -99,6 +99,17 @@ input {
   font: inherit;
 }
 
+select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 10px;
+  font: inherit;
+  font-weight: 800;
+}
+
 button {
   border: 0;
   cursor: pointer;
@@ -786,6 +797,14 @@ input:focus {
   background: #030712;
 }
 
+.tile.presenting {
+  background: #020617;
+}
+
+.tile.presenting video {
+  object-fit: contain;
+}
+
 .tile .label {
   position: absolute;
   left: 10px;
@@ -819,8 +838,21 @@ input:focus {
 }
 
 .message strong {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   color: #9cc2ff;
   font-size: 13px;
+}
+
+.message strong span {
+  color: var(--meeting-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.message.private {
+  border: 1px solid rgba(255, 211, 122, 0.38);
 }
 
 .message p {
@@ -830,13 +862,14 @@ input:focus {
 
 .chat-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(105px, 0.5fr) minmax(0, 1fr) auto;
   gap: 8px;
   border-top: 1px solid var(--meeting-line);
   padding: 10px;
 }
 
-.chat-form input {
+.chat-form input,
+.chat-form select {
   min-height: 42px;
   border-color: var(--meeting-line);
   background: #0c1628;
@@ -993,6 +1026,10 @@ input:focus {
   .chat-form,
   .controls {
     grid-template-columns: 1fr;
+  }
+
+  .chat-form button {
+    min-height: 42px;
   }
 
   .controls button {
