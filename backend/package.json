@@ -1,0 +1,19 @@
+{
+  "name": "meet-x-backend",
+  "version": "1.0.0",
+  "description": "Render-ready signaling API for Meet X video meetings.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.3",
+    "socket.io": "^4.7.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

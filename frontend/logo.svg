@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Meet X logo</title>
+  <desc id="desc">A modern Meet X mark combining a video camera, meeting nodes, and an X.</desc>
+  <rect width="128" height="128" rx="30" fill="#0B1020"/>
+  <path d="M27 45c0-9.4 7.6-17 17-17h36c9.4 0 17 7.6 17 17v38c0 9.4-7.6 17-17 17H44c-9.4 0-17-7.6-17-17V45Z" fill="#F8FAFC"/>
+  <path d="m97 55 18-10.5c4-2.3 9 .6 9 5.2v28.6c0 4.6-5 7.5-9 5.2L97 73V55Z" fill="#22C55E"/>
+  <path d="M45 46 80 82M80 46 45 82" stroke="#2563EB" stroke-width="10" stroke-linecap="round"/>
+  <path d="M45 46 80 82M80 46 45 82" stroke="#0B1020" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="29" cy="29" r="8" fill="#60A5FA"/>
+  <circle cx="99" cy="29" r="8" fill="#60A5FA"/>
+  <circle cx="29" cy="99" r="8" fill="#34D399"/>
+  <circle cx="99" cy="99" r="8" fill="#34D399"/>
+  <path d="M36 36 47 47M92 36 79 49M36 92l12-12M92 92 80 80" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+</svg>

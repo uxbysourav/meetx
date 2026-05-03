@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: meet-x-backend
+    env: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: CLIENT_ORIGIN
+        value: "*"
