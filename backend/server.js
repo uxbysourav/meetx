@@ -103,6 +103,7 @@ app.post("/api/rooms", (req, res) => {
     name,
     isAdmin: true,
     handRaised: false,
+    muted: false,
     screenRequest: false,
     presenting: false,
     socketId: null
@@ -132,6 +133,7 @@ app.put("/api/rooms/:roomCode/join", (req, res) => {
     name,
     isAdmin: false,
     handRaised: false,
+    muted: false,
     screenRequest: false,
     presenting: false,
     socketId: null
@@ -210,6 +212,15 @@ io.on("connection", (socket) => {
     const user = findUser(room, socket.data.userId);
     if (!room || !user) return;
     user.handRaised = !user.handRaised;
+    io.to(room.code).emit("participant-updated", publicUser(user));
+    io.to(room.code).emit("admin-message", { message: `${user.name} ${user.handRaised ? "raised" : "lowered"} their hand.` });
+  });
+
+  socket.on("media-state", ({ muted }) => {
+    const room = rooms.get(socket.data.roomCode);
+    const user = findUser(room, socket.data.userId);
+    if (!room || !user) return;
+    user.muted = Boolean(muted);
     io.to(room.code).emit("participant-updated", publicUser(user));
   });
 
@@ -302,7 +313,8 @@ function normalizeLine(line) {
     from: { x: toUnit(line.from.x), y: toUnit(line.from.y) },
     to: { x: toUnit(line.to.x), y: toUnit(line.to.y) },
     color: /^#[0-9a-f]{6}$/i.test(line.color) ? line.color : "#111827",
-    width: Math.min(12, Math.max(1, Number(line.width) || 3))
+    width: Math.min(12, Math.max(1, Number(line.width) || 3)),
+    tool: line.tool === "eraser" ? "eraser" : "pen"
   };
 }
 

@@ -723,8 +723,34 @@ input:focus {
 }
 
 .badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
   color: #ffd37a;
   font-size: 12px;
+}
+
+.badges span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(255, 211, 122, 0.12);
+  color: #ffd37a;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.badges svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .mini-actions {
@@ -833,6 +859,54 @@ input:focus {
   height: 100%;
   background: #f8fafc;
   cursor: crosshair;
+}
+
+.board-tools {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  border: 1px solid var(--meeting-line);
+  border-radius: 8px;
+  background: rgba(8, 16, 30, 0.92);
+  padding: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+
+.board-tool,
+.board-tools input[type="color"] {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--meeting-line);
+  border-radius: 8px;
+  background: #17243a;
+  color: var(--meeting-text);
+  padding: 0;
+}
+
+.board-tool.active {
+  background: #ffd37a;
+  color: #241600;
+}
+
+.board-tool svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.board-tools input[type="range"] {
+  width: 92px;
 }
 
 .message {

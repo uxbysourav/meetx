@@ -30,6 +30,11 @@ const els = {
   leaveRoom: document.querySelector("#leaveRoom"),
   toggleBoard: document.querySelector("#toggleBoard"),
   clearBoard: document.querySelector("#clearBoard"),
+  boardTools: document.querySelector("#boardTools"),
+  boardPen: document.querySelector("#boardPen"),
+  boardEraser: document.querySelector("#boardEraser"),
+  boardColor: document.querySelector("#boardColor"),
+  boardSize: document.querySelector("#boardSize"),
   whiteboard: document.querySelector("#whiteboard"),
   toast: document.querySelector("#toast")
 };
@@ -51,6 +56,7 @@ const state = {
   screenShareApproved: false,
   notificationPermissionAsked: false,
   boardOpen: false,
+  boardTool: "pen",
   isDrawing: false,
   lastPoint: null
 };
@@ -403,21 +409,23 @@ function renderParticipants() {
   els.participantCount.textContent = users.length;
   const amAdmin = state.user?.isAdmin;
   els.clearBoard.classList.toggle("hidden", !amAdmin);
+  els.boardTools.classList.toggle("hidden", !state.boardOpen || !amAdmin);
   document.querySelectorAll(".admin-only").forEach((el) => el.classList.toggle("hidden", !amAdmin));
   els.participants.innerHTML = users.map((user) => {
     const canModerate = amAdmin && user.id !== state.user.id;
     const badges = [
-      user.isAdmin ? "Admin" : "",
-      user.handRaised ? "Hand raised" : "",
-      user.screenRequest ? "Wants to present" : "",
-      user.presenting ? "Presenting" : ""
-    ].filter(Boolean).join(" | ");
+      user.isAdmin ? `<span title="Admin" aria-label="Admin">Admin</span>` : "",
+      user.muted ? `<span title="Muted microphone" aria-label="Muted microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 5 2.2"></path><path d="M19 10v2a7 7 0 0 1-.7 3M12 19v3M8 22h8M4 4l16 16"></path></svg></span>` : "",
+      user.handRaised ? `<span title="Hand raised" aria-label="Hand raised"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V5a2 2 0 0 1 4 0v5"></path><path d="M11 10V4a2 2 0 0 1 4 0v7"></path><path d="M15 11V6a2 2 0 0 1 4 0v8a7 7 0 0 1-14 0v-3a2 2 0 0 1 4 0v2"></path></svg></span>` : "",
+      user.screenRequest ? `<span title="Wants to present" aria-label="Wants to present"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4z"></path><path d="M12 16v5M8 21h8M12 12V8M9 10l3-3 3 3"></path></svg></span>` : "",
+      user.presenting ? `<span title="Presenting" aria-label="Presenting"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4z"></path><path d="M8 21h8M12 16v5"></path></svg></span>` : ""
+    ].filter(Boolean).join("");
     return `
       <article class="participant">
         <span class="avatar">${escapeHtml(user.name[0] || "?")}</span>
         <div>
           <div class="person-name">${escapeHtml(user.name)}</div>
-          <div class="badges">${escapeHtml(badges)}</div>
+          <div class="badges">${badges}</div>
         </div>
         ${canModerate ? `
           <div class="mini-actions">
@@ -538,11 +546,13 @@ function drawLine(line) {
   const ctx = els.whiteboard.getContext("2d");
   ctx.strokeStyle = line.color || "#111827";
   ctx.lineWidth = line.width || 3;
+  ctx.globalCompositeOperation = line.tool === "eraser" ? "destination-out" : "source-over";
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.moveTo(line.from.x * els.whiteboard.width, line.from.y * els.whiteboard.height);
   ctx.lineTo(line.to.x * els.whiteboard.width, line.to.y * els.whiteboard.height);
   ctx.stroke();
+  ctx.globalCompositeOperation = "source-over";
 }
 
 function drawRemoteLine(line) {
@@ -667,6 +677,7 @@ els.toggleMic.addEventListener("click", () => {
   els.toggleMic.setAttribute("aria-label", label);
   els.toggleMic.setAttribute("title", label);
   els.toggleMic.classList.toggle("muted", !track.enabled);
+  state.socket?.emit("media-state", { muted: !track.enabled });
 });
 
 els.toggleCamera.addEventListener("click", () => {
@@ -699,7 +710,20 @@ els.shareScreen.addEventListener("click", () => {
 els.toggleBoard.addEventListener("click", () => {
   state.boardOpen = !state.boardOpen;
   els.whiteboard.classList.toggle("hidden", !state.boardOpen);
+  els.boardTools.classList.toggle("hidden", !state.boardOpen || !state.user?.isAdmin);
   if (state.boardOpen) resizeBoard();
+});
+
+els.boardPen.addEventListener("click", () => {
+  state.boardTool = "pen";
+  els.boardPen.classList.add("active");
+  els.boardEraser.classList.remove("active");
+});
+
+els.boardEraser.addEventListener("click", () => {
+  state.boardTool = "eraser";
+  els.boardEraser.classList.add("active");
+  els.boardPen.classList.remove("active");
 });
 
 els.clearBoard.addEventListener("click", () => {
@@ -716,7 +740,13 @@ els.whiteboard.addEventListener("pointerdown", (event) => {
 els.whiteboard.addEventListener("pointermove", (event) => {
   if (!state.isDrawing || !state.user?.isAdmin) return;
   const nextPoint = getBoardPoint(event);
-  const line = { from: state.lastPoint, to: nextPoint, color: "#111827", width: 3 };
+  const line = {
+    from: state.lastPoint,
+    to: nextPoint,
+    color: els.boardColor.value,
+    width: Number(els.boardSize.value),
+    tool: state.boardTool
+  };
   drawLine(line);
   state.socket.emit("whiteboard-draw", line);
   state.lastPoint = nextPoint;

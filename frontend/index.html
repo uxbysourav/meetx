@@ -126,6 +126,16 @@
 
           <section class="stage">
             <div id="videoGrid" class="video-grid"></div>
+            <div id="boardTools" class="board-tools hidden" aria-label="Whiteboard tools">
+              <button id="boardPen" class="board-tool active" type="button" title="Pen" aria-label="Pen">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 4-1 11-11-3-3L5 16l-1 4Z"></path><path d="m14 6 3 3"></path></svg>
+              </button>
+              <button id="boardEraser" class="board-tool" type="button" title="Eraser" aria-label="Eraser">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 8-8 7 7-5 5H8l-4-4Z"></path><path d="M14 19h7"></path></svg>
+              </button>
+              <input id="boardColor" type="color" value="#111827" title="Pen color" aria-label="Pen color" />
+              <input id="boardSize" type="range" min="2" max="12" value="3" title="Pen size" aria-label="Pen size" />
+            </div>
             <canvas id="whiteboard" class="whiteboard hidden"></canvas>
           </section>
 
