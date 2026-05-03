@@ -110,20 +110,38 @@ async function requestJson(path, options = {}) {
   }
 
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || "Request failed. Please try again.");
+  if (!response.ok) {
+    if (response.status === 404) throw new Error(body.error || "Meeting code was not found.");
+    if (response.status >= 500) throw new Error("Backend is waking up or temporarily unavailable. Please try again in a few seconds.");
+    throw new Error(body.error || `Request failed with status ${response.status}.`);
+  }
   return body;
 }
 
-async function ensureMedia() {
-  if (state.localStream) return state.localStream;
-  try {
-    state.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-  } catch (error) {
-    showToast("Camera or microphone was blocked. Joining with receive-only mode.");
-    state.localStream = new MediaStream();
-  }
-  addVideoTile("local", state.localStream, "You", true);
+function ensureLocalStream() {
+  if (!state.localStream) state.localStream = new MediaStream();
   return state.localStream;
+}
+
+async function requestMediaAfterJoin() {
+  ensureLocalStream();
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showToast("Camera and microphone are not available in this browser. You joined without media.");
+    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+    return state.localStream;
+  }
+
+  try {
+    const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    mediaStream.getTracks().forEach((track) => state.localStream.addTrack(track));
+    attachLocalTracksToPeers(mediaStream);
+    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+    return state.localStream;
+  } catch {
+    showToast("Camera or microphone was blocked. You still joined without media.");
+    addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
+    return state.localStream;
+  }
 }
 
 function connectSocket() {
@@ -154,7 +172,7 @@ function connectSocket() {
 }
 
 async function enterRoom({ name, code, create }) {
-  const localStream = await ensureMedia();
+  ensureLocalStream();
   const endpoint = create ? "/api/rooms" : `/api/rooms/${code}/join`;
   const payload = await requestJson(endpoint, {
     method: create ? "POST" : "PUT",
@@ -174,8 +192,9 @@ async function enterRoom({ name, code, create }) {
     name: state.user.name
   });
 
-  addVideoTile("local", localStream, `${state.user.name} (you)`, true);
+  addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
   resizeBoard();
+  requestMediaAfterJoin();
 }
 
 function handleRoomState({ participants, messages, boardLines }) {
@@ -251,6 +270,20 @@ async function handleSignal({ from, signal }) {
 function closePeer(userId) {
   state.peers.get(userId)?.close();
   state.peers.delete(userId);
+}
+
+async function attachLocalTracksToPeers(stream) {
+  for (const [userId, peer] of state.peers.entries()) {
+    for (const track of stream.getTracks()) {
+      const alreadySending = peer.getSenders().some((sender) => sender.track?.id === track.id);
+      if (!alreadySending) peer.addTrack(track, state.localStream);
+    }
+    if (peer.signalingState === "stable") {
+      const offer = await peer.createOffer();
+      await peer.setLocalDescription(offer);
+      state.socket.emit("signal", { to: userId, signal: { description: peer.localDescription } });
+    }
+  }
 }
 
 function addVideoTile(id, stream, label, muted = false) {
@@ -486,7 +519,10 @@ els.participants.addEventListener("click", (event) => {
 
 els.toggleMic.addEventListener("click", () => {
   const track = state.localStream?.getAudioTracks()[0];
-  if (!track) return;
+  if (!track) {
+    showToast("Microphone is not enabled for this meeting.");
+    return;
+  }
   track.enabled = !track.enabled;
   const label = track.enabled ? "Mute microphone" : "Unmute microphone";
   els.toggleMic.setAttribute("aria-label", label);
@@ -496,7 +532,10 @@ els.toggleMic.addEventListener("click", () => {
 
 els.toggleCamera.addEventListener("click", () => {
   const track = state.localStream?.getVideoTracks()[0];
-  if (!track) return;
+  if (!track) {
+    showToast("Camera is not enabled for this meeting.");
+    return;
+  }
   track.enabled = !track.enabled;
   const label = track.enabled ? "Turn camera off" : "Turn camera on";
   els.toggleCamera.setAttribute("aria-label", label);

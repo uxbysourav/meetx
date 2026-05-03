@@ -141,6 +141,14 @@ app.put("/api/rooms/:roomCode/join", (req, res) => {
   res.json({ roomCode, user: publicUser(user) });
 });
 
+app.use((err, _req, res, next) => {
+  if (err instanceof SyntaxError && "body" in err) {
+    res.status(400).json({ error: "Invalid request data." });
+    return;
+  }
+  next(err);
+});
+
 io.on("connection", (socket) => {
   socket.on("join-room", ({ roomCode, userId }) => {
     const code = String(roomCode || "").toUpperCase();
