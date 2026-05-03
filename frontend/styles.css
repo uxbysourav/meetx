@@ -788,6 +788,12 @@ input:focus {
   border: 1px solid var(--meeting-line);
   border-radius: 8px;
   background: #101827;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.tile.speaking {
+  border-color: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.28), 0 18px 38px rgba(34, 197, 94, 0.16);
 }
 
 .tile video {
@@ -886,6 +892,7 @@ input:focus {
 
 .control-button,
 .danger {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 46px;
@@ -901,6 +908,22 @@ input:focus {
 .control-button.active {
   background: #ffd37a;
   color: #241600;
+}
+
+.control-button.muted {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.control-button.muted::after {
+  content: "";
+  position: absolute;
+  width: 28px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  transform: rotate(-42deg);
+  box-shadow: 0 0 0 2px #dc2626;
 }
 
 .danger {

@@ -44,6 +44,8 @@ const state = {
   user: null,
   participants: new Map(),
   peers: new Map(),
+  audioContext: null,
+  audioMonitors: new Map(),
   localStream: null,
   screenStream: null,
   screenShareApproved: false,
@@ -254,6 +256,7 @@ async function handleParticipantJoined(user) {
 function handleParticipantLeft({ userId }) {
   state.participants.delete(userId);
   closePeer(userId);
+  stopAudioMonitor(userId);
   document.querySelector(`[data-tile="${userId}"]`)?.remove();
   renderParticipants();
 }
@@ -310,6 +313,7 @@ async function handleSignal({ from, signal }) {
 function closePeer(userId) {
   state.peers.get(userId)?.close();
   state.peers.delete(userId);
+  stopAudioMonitor(userId);
 }
 
 async function attachLocalTracksToPeers(stream) {
@@ -339,10 +343,59 @@ function addVideoTile(id, stream, label, muted = false) {
   video.srcObject = stream;
   video.muted = muted;
   tile.querySelector(".label").textContent = label;
+  monitorAudioLevel(id, stream);
 }
 
 function setTilePresenting(id, presenting) {
   document.querySelector(`[data-tile="${id}"]`)?.classList.toggle("presenting", presenting);
+}
+
+function getAudioContext() {
+  if (!state.audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+    state.audioContext = new AudioContextClass();
+  }
+  if (state.audioContext.state === "suspended") state.audioContext.resume().catch(() => {});
+  return state.audioContext;
+}
+
+function stopAudioMonitor(id) {
+  const monitor = state.audioMonitors.get(id);
+  if (!monitor) return;
+  cancelAnimationFrame(monitor.frameId);
+  monitor.source.disconnect();
+  document.querySelector(`[data-tile="${id}"]`)?.classList.remove("speaking");
+  state.audioMonitors.delete(id);
+}
+
+function monitorAudioLevel(id, stream) {
+  stopAudioMonitor(id);
+  if (!stream?.getAudioTracks().length) return;
+  const audioContext = getAudioContext();
+  if (!audioContext) return;
+
+  const source = audioContext.createMediaStreamSource(stream);
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 512;
+  source.connect(analyser);
+  const data = new Uint8Array(analyser.fftSize);
+  const monitor = { source, frameId: 0 };
+  state.audioMonitors.set(id, monitor);
+
+  const tick = () => {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const value of data) {
+      const centered = value - 128;
+      sum += centered * centered;
+    }
+    const volume = Math.sqrt(sum / data.length);
+    document.querySelector(`[data-tile="${id}"]`)?.classList.toggle("speaking", volume > 8);
+    monitor.frameId = requestAnimationFrame(tick);
+  };
+
+  tick();
 }
 
 function renderParticipants() {
@@ -507,6 +560,8 @@ function leaveRoom(notify = true) {
   state.localStream?.getTracks().forEach((track) => track.stop());
   state.screenStream?.getTracks().forEach((track) => track.stop());
   state.peers.forEach((peer) => peer.close());
+  state.audioMonitors.forEach((_monitor, id) => stopAudioMonitor(id));
+  state.audioContext?.close().catch(() => {});
   location.reload();
 }
 
@@ -611,7 +666,7 @@ els.toggleMic.addEventListener("click", () => {
   const label = track.enabled ? "Mute microphone" : "Unmute microphone";
   els.toggleMic.setAttribute("aria-label", label);
   els.toggleMic.setAttribute("title", label);
-  els.toggleMic.classList.toggle("active", !track.enabled);
+  els.toggleMic.classList.toggle("muted", !track.enabled);
 });
 
 els.toggleCamera.addEventListener("click", () => {
