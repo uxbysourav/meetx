@@ -656,6 +656,8 @@ input:focus {
 
 .chat-panel {
   border-left-width: 1px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .sidebar-head {
@@ -691,6 +693,11 @@ input:focus {
   height: calc(100% - 58px);
   overflow: auto;
   padding: 14px;
+}
+
+.chat-panel .messages {
+  height: auto;
+  min-height: 0;
 }
 
 .participant {
@@ -852,6 +859,42 @@ input:focus {
   white-space: nowrap;
 }
 
+.tile-fullscreen {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(5, 9, 20, 0.74);
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 160ms ease, background-color 160ms ease;
+}
+
+.tile:hover .tile-fullscreen,
+.tile:focus-within .tile-fullscreen,
+.tile.presenting .tile-fullscreen {
+  opacity: 1;
+}
+
+.tile-fullscreen:hover {
+  background: rgba(37, 99, 235, 0.9);
+}
+
+.tile-fullscreen svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .whiteboard {
   position: absolute;
   inset: 0;
@@ -942,10 +985,11 @@ input:focus {
 
 .chat-form {
   display: grid;
-  grid-template-columns: minmax(105px, 0.5fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(112px, 0.46fr) minmax(120px, 1fr) 44px;
   gap: 8px;
   border-top: 1px solid var(--meeting-line);
   padding: 10px;
+  background: #08101e;
 }
 
 .chat-form input,
@@ -954,6 +998,15 @@ input:focus {
   border-color: var(--meeting-line);
   background: #0c1628;
   color: var(--meeting-text);
+}
+
+.chat-form input {
+  border-color: #3d77d5;
+  background: #111f36;
+}
+
+.chat-form input::placeholder {
+  color: #b7c5da;
 }
 
 .controls {
@@ -1127,6 +1180,7 @@ input:focus {
 
   .chat-form button {
     min-height: 42px;
+    width: 100%;
   }
 
   .controls button {

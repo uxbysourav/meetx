@@ -54,6 +54,7 @@ const state = {
   localStream: null,
   screenStream: null,
   screenShareApproved: false,
+  screenSharing: false,
   notificationPermissionAsked: false,
   boardOpen: false,
   boardTool: "pen",
@@ -66,6 +67,15 @@ const rtcConfig = {
 };
 
 const systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+const video720p = {
+  width: { ideal: 1280, max: 1280 },
+  height: { ideal: 720, max: 720 },
+  frameRate: { ideal: 24, max: 30 }
+};
+
+const shareIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H4z"></path><path d="M12 16v5M8 21h8M12 12V8M9 10l3-3 3 3"></path></svg>`;
+const stopShareIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v14H5z"></path><path d="m8 8 8 8M16 8l-8 8"></path></svg>`;
+const fullscreenIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"></path></svg>`;
 
 function getPreferredTheme() {
   return localStorage.getItem("meetXThemePreference") || (systemThemeQuery.matches ? "dark" : "light");
@@ -161,7 +171,7 @@ async function requestMediaAfterJoin() {
 
   for (const request of [
     { kind: "audio", constraints: { audio: true, video: false }, label: "Microphone" },
-    { kind: "video", constraints: { audio: false, video: true }, label: "Camera" }
+    { kind: "video", constraints: { audio: false, video: video720p }, label: "Camera" }
   ]) {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia(request.constraints);
@@ -280,7 +290,10 @@ async function createPeer(userId, initiator) {
   const peer = new RTCPeerConnection(rtcConfig);
   state.peers.set(userId, peer);
 
-  state.localStream?.getTracks().forEach((track) => peer.addTrack(track, state.localStream));
+  state.localStream?.getTracks().forEach((track) => {
+    const sender = peer.addTrack(track, state.localStream);
+    limitSenderQuality(sender);
+  });
   peer.onicecandidate = ({ candidate }) => {
     if (candidate) state.socket.emit("signal", { to: userId, signal: { candidate } });
   };
@@ -326,7 +339,10 @@ async function attachLocalTracksToPeers(stream) {
   for (const [userId, peer] of state.peers.entries()) {
     for (const track of stream.getTracks()) {
       const alreadySending = peer.getSenders().some((sender) => sender.track?.id === track.id);
-      if (!alreadySending) peer.addTrack(track, state.localStream);
+      if (!alreadySending) {
+        const sender = peer.addTrack(track, state.localStream);
+        await limitSenderQuality(sender);
+      }
     }
     if (peer.signalingState === "stable") {
       const offer = await peer.createOffer();
@@ -336,13 +352,22 @@ async function attachLocalTracksToPeers(stream) {
   }
 }
 
+async function limitSenderQuality(sender) {
+  if (!sender?.getParameters) return;
+  const params = sender.getParameters();
+  params.encodings = params.encodings?.length ? params.encodings : [{}];
+  params.encodings[0].maxBitrate = sender.track?.kind === "video" ? 1500000 : 64000;
+  params.encodings[0].maxFramerate = sender.track?.kind === "video" ? 30 : undefined;
+  await sender.setParameters(params).catch(() => {});
+}
+
 function addVideoTile(id, stream, label, muted = false) {
   let tile = document.querySelector(`[data-tile="${id}"]`);
   if (!tile) {
     tile = document.createElement("article");
     tile.className = "tile";
     tile.dataset.tile = id;
-    tile.innerHTML = `<video autoplay playsinline></video><span class="label"></span>`;
+    tile.innerHTML = `<video autoplay playsinline></video><button class="tile-fullscreen" type="button" title="Fullscreen" aria-label="Fullscreen">${fullscreenIcon}</button><span class="label"></span>`;
     els.videoGrid.appendChild(tile);
   }
   const video = tile.querySelector("video");
@@ -485,8 +510,10 @@ async function setOutgoingVideoTrack(track) {
     const sender = peer.getSenders().find((item) => item.track?.kind === "video");
     if (sender) {
       await sender.replaceTrack(track);
+      await limitSenderQuality(sender);
     } else {
-      peer.addTrack(track, track === state.screenStream?.getVideoTracks()[0] ? state.screenStream : state.localStream);
+      const sender = peer.addTrack(track, track === state.screenStream?.getVideoTracks()[0] ? state.screenStream : state.localStream);
+      await limitSenderQuality(sender);
       if (peer.signalingState === "stable") {
         const offer = await peer.createOffer();
         await peer.setLocalDescription(offer);
@@ -504,12 +531,18 @@ async function clearOutgoingVideoTrack() {
 }
 
 async function startScreenShare() {
+  if (state.screenSharing) {
+    await stopScreenShare();
+    return;
+  }
   try {
-    state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: video720p, audio: false });
     const screenTrack = state.screenStream.getVideoTracks()[0];
+    await screenTrack.applyConstraints(video720p).catch(() => {});
     await setOutgoingVideoTrack(screenTrack);
     addVideoTile("local", state.screenStream, `${state.user.name} presenting`, true);
     setTilePresenting("local", true);
+    updateShareButton(true);
     state.socket.emit("screen-started");
     showToast("Screen sharing started.");
     screenTrack.onended = () => stopScreenShare();
@@ -519,13 +552,26 @@ async function startScreenShare() {
 }
 
 async function stopScreenShare() {
+  if (!state.screenSharing && !state.screenStream) return;
   const cameraTrack = state.localStream?.getVideoTracks()[0];
   if (cameraTrack) await setOutgoingVideoTrack(cameraTrack);
   else await clearOutgoingVideoTrack();
+  state.screenStream?.getTracks().forEach((track) => track.stop());
+  state.screenStream = null;
   addVideoTile("local", state.localStream, `${state.user.name} (you)`, true);
   setTilePresenting("local", false);
+  updateShareButton(false);
   state.socket.emit("screen-stopped");
   showToast("Screen sharing stopped.");
+}
+
+function updateShareButton(sharing) {
+  state.screenSharing = sharing;
+  els.shareScreen.classList.toggle("active", sharing);
+  els.shareScreen.innerHTML = sharing ? stopShareIcon : shareIcon;
+  const label = sharing ? "Stop screen sharing" : "Share screen";
+  els.shareScreen.setAttribute("title", label);
+  els.shareScreen.setAttribute("aria-label", label);
 }
 
 function resizeBoard() {
@@ -658,6 +704,18 @@ els.chatForm.addEventListener("submit", (event) => {
   if (!text) return;
   state.socket.emit("chat-message", { text, to: els.chatRecipient.value || "everyone" });
   els.chatInput.value = "";
+});
+
+els.videoGrid.addEventListener("click", (event) => {
+  const button = event.target.closest(".tile-fullscreen");
+  if (!button) return;
+  const tile = button.closest(".tile");
+  if (!tile) return;
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+    return;
+  }
+  tile.requestFullscreen?.().catch(() => showToast("Fullscreen is not available here."));
 });
 
 els.participants.addEventListener("click", (event) => {
