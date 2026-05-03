@@ -85,6 +85,14 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
 });
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    name: "Meet X backend",
+    health: "/api/health"
+  });
+});
+
 app.post("/api/rooms", (req, res) => {
   const name = sanitizeName(req.body.name);
   if (!name) return res.status(400).json({ error: "Name is required." });
